@@ -318,6 +318,9 @@ pub struct Shape {
     /// Unmodelled XML kept for round-trip (extension lists etc.).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_ext: Option<String>,
+    /// PowerPoint tags (`p:custDataLst` → `ppt/tags/tagN.xml`), name and value, in file order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<(String, String)>,
 }
 
 impl Default for Shape {
@@ -343,6 +346,7 @@ impl Default for Shape {
             click: None,
             hover: None,
             raw_ext: None,
+            tags: vec![],
         }
     }
 }
@@ -491,6 +495,12 @@ pub struct Slide {
     /// Unmodelled XML kept for round-trip (custom data, tags).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_ext: Option<String>,
+    /// PowerPoint tags on the slide (`p:cSld/p:custDataLst`), name and value, in file order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<(String, String)>,
+    /// The slide's id in the file it came from (`p:sldId/@id`, 256 and up); written back when unique.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<u32>,
 }
 
 impl Default for Slide {
@@ -508,6 +518,8 @@ impl Default for Slide {
             notes: TextBody::default(),
             comments: vec![],
             raw_ext: None,
+            tags: vec![],
+            file_id: None,
         }
     }
 }

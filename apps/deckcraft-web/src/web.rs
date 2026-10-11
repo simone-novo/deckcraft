@@ -39,7 +39,12 @@ pub fn start() {
                     let inbox: Inbox = Inbox::default();
                     let mut app = SlideApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
                     let q = query();
-                    if !q.contains("blank") {
+                    // `?open=<url>`: the host page's server hands over the deck (see `fetch_into`).
+                    let open = param("open");
+                    if let Some(url) = &open {
+                        fetch_into(url.clone(), inbox.clone(), cc.egui_ctx.clone());
+                    }
+                    if open.is_none() && !q.contains("blank") {
                         if let Err(e) = deckcraft_engine::sample::open_sample(&mut app.session) {
                             log::error!("sample deck: {e}");
                         }
@@ -64,6 +69,68 @@ pub fn start() {
 
 fn query() -> String {
     web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
+}
+
+/// One URL query parameter, decoded.
+fn param(name: &str) -> Option<String> {
+    web_sys::UrlSearchParams::new_with_str(&query()).ok()?.get(name).filter(|v| !v.is_empty())
+}
+
+fn js_err(e: wasm_bindgen::JsValue) -> String {
+    format!("{e:?}")
+}
+
+/// Fetch a presentation and deliver it through the inbox, as if it had been picked or dropped.
+fn fetch_into(url: String, inbox: Inbox, ctx: egui::Context) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let got: Result<Vec<u8>, String> = async {
+            let window = web_sys::window().ok_or_else(|| "no window".to_string())?;
+            let resp: web_sys::Response =
+                wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(&url)).await.map_err(js_err)?.dyn_into().map_err(|_| "not a response".to_string())?;
+            if !resp.ok() {
+                return Err(format!("HTTP {}", resp.status()));
+            }
+            let buf = wasm_bindgen_futures::JsFuture::from(resp.array_buffer().map_err(js_err)?).await.map_err(js_err)?;
+            Ok(js_sys::Uint8Array::new(&buf).to_vec())
+        }
+        .await;
+        match got {
+            Ok(bytes) => {
+                let path = url.split(['?', '#']).next().unwrap_or("");
+                let mut name = path.rsplit('/').next().filter(|n| !n.is_empty()).unwrap_or("deck").to_string();
+                if !PRESENTATION_EXTS.iter().any(|e| name.to_ascii_lowercase().ends_with(&format!(".{e}"))) {
+                    name.push_str(".pptx");
+                }
+                inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
+                ctx.request_repaint();
+            }
+            Err(e) => log::error!("couldn't open {url}: {e}"),
+        }
+    });
+}
+
+/// `?save=<url>`: Save sends the file back to the host page's server with a PUT instead of a download.
+fn put_bytes(url: String, bytes: Vec<u8>) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let sent: Result<(), String> = async {
+            let window = web_sys::window().ok_or_else(|| "no window".to_string())?;
+            let init = web_sys::RequestInit::new();
+            init.set_method("PUT");
+            let body = js_sys::Uint8Array::from(bytes.as_slice());
+            init.set_body(&body);
+            let resp: web_sys::Response = wasm_bindgen_futures::JsFuture::from(window.fetch_with_str_and_init(&url, &init))
+                .await
+                .map_err(js_err)?
+                .dyn_into()
+                .map_err(|_| "not a response".to_string())?;
+            if resp.ok() { Ok(()) } else { Err(format!("HTTP {}", resp.status())) }
+        }
+        .await;
+        match sent {
+            Ok(()) => log::info!("saved {} bytes to {url}", bytes.len()),
+            Err(e) => log::error!("save to {url} failed: {e}"),
+        }
+    });
 }
 
 /// Wraps the app to read dropped files asynchronously (browsers can't read them synchronously)
@@ -125,13 +192,23 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
                 ctx.request_repaint();
             });
         })),
-        write: Some(Box::new(|name: &str, bytes: &[u8]| download(name, bytes))),
-        download: Some(Box::new(|name: &str, bytes: &[u8]| {
-            if let Err(e) = download(name, bytes) {
-                log::error!("download of {name} failed: {e}");
+        write: Some(Box::new(|name: &str, bytes: &[u8]| match param("save") {
+            Some(url) => {
+                put_bytes(url, bytes.to_vec());
+                Ok(())
+            }
+            None => download(name, bytes),
+        })),
+        download: Some(Box::new(|name: &str, bytes: &[u8]| match param("save") {
+            Some(url) => put_bytes(url, bytes.to_vec()),
+            None => {
+                if let Err(e) = download(name, bytes) {
+                    log::error!("download of {name} failed: {e}");
+                }
             }
         })),
         inbox: Some(inbox),
+        save_pptx: param("save").is_some(),
         ..Default::default()
     }
 }

@@ -128,6 +128,7 @@ fn base(imp: &mut Imp, part: &Part, ctx: &mut IdCtx, nv: Option<&El>) -> Shape {
                     s.locked = e.elements().next().is_some_and(|l| l.bool("noMove") == Some(true) && l.bool("noResize") == Some(true));
                 }
                 "nvPr" => {
+                    s.tags = super::read_tags(imp, part, e.child("custDataLst"));
                     if let Some(ph) = e.child("ph") {
                         s.ph = Some(Placeholder {
                             kind: ph.attr("type").map(PhType::from_xml).unwrap_or(PhType::Obj),

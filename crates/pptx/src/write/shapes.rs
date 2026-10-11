@@ -153,28 +153,31 @@ fn cnvpr(w: &mut W, x: &mut Exp, o: &mut Out, id: u32, s: &Shape) {
     w.close("p:cNvPr");
 }
 
-fn nv_pr(w: &mut W, s: &Shape) {
-    match &s.ph {
-        Some(ph) => {
-            w.open0("p:nvPr");
-            let ty = match ph.kind {
-                PhType::Obj => None,
-                k => Some(k.xml()),
-            };
-            let sz = ph.size.as_deref().filter(|z| matches!(*z, "full" | "half" | "quarter"));
-            w.empty(
-                "p:ph",
-                A::new()
-                    .o("type", ty)
-                    .o("orient", ph.vertical.then_some("vert"))
-                    .o("sz", sz)
-                    .o("idx", (ph.idx != 0).then_some(ph.idx))
-                    .t("hasCustomPrompt", ph.has_custom_prompt),
-            );
-            w.close("p:nvPr");
-        }
-        None => w.empty0("p:nvPr"),
+fn nv_pr(w: &mut W, x: &mut Exp, o: &mut Out, s: &Shape) {
+    if s.ph.is_none() && s.tags.is_empty() {
+        w.empty0("p:nvPr");
+        return;
     }
+    w.open0("p:nvPr");
+    if let Some(ph) = &s.ph {
+        let ty = match ph.kind {
+            PhType::Obj => None,
+            k => Some(k.xml()),
+        };
+        let sz = ph.size.as_deref().filter(|z| matches!(*z, "full" | "half" | "quarter"));
+        w.empty(
+            "p:ph",
+            A::new()
+                .o("type", ty)
+                .o("orient", ph.vertical.then_some("vert"))
+                .o("sz", sz)
+                .o("idx", (ph.idx != 0).then_some(ph.idx))
+                .t("hasCustomPrompt", ph.has_custom_prompt),
+        );
+    }
+    // CT_ApplicationNonVisualDrawingProps: ph, media, custDataLst, extLst.
+    x.cust_data(w, o, &s.tags);
+    w.close("p:nvPr");
 }
 
 fn locks(w: &mut W, tag: &str, s: &Shape, extra: A) {
@@ -268,7 +271,7 @@ pub fn shape(w: &mut W, x: &mut Exp, o: &mut Out, cx: &mut Ctx, s: &Shape, depth
             w.open0("p:cNvPicPr");
             locks(w, "a:picLocks", s, A::new().a("noChangeAspect", "1"));
             w.close("p:cNvPicPr");
-            nv_pr(w, s);
+            nv_pr(w, x, o, s);
             w.close("p:nvPicPr");
             dml::blip_fill(w, x, o, "p:blipFill", fill);
             let mut s2 = s.clone();
@@ -289,7 +292,7 @@ pub fn shape(w: &mut W, x: &mut Exp, o: &mut Out, cx: &mut Ctx, s: &Shape, depth
             w.open0("p:cNvGrpSpPr");
             locks(w, "a:grpSpLocks", s, A::new());
             w.close("p:cNvGrpSpPr");
-            nv_pr(w, s);
+            nv_pr(w, x, o, s);
             w.close("p:nvGrpSpPr");
             w.open0("p:grpSpPr");
             let xf = s.xfrm.unwrap_or(*child);
@@ -324,7 +327,7 @@ pub fn shape(w: &mut W, x: &mut Exp, o: &mut Out, cx: &mut Ctx, s: &Shape, depth
                 }
                 w.close("p:cNvCxnSpPr");
             }
-            nv_pr(w, s);
+            nv_pr(w, x, o, s);
             w.close("p:nvCxnSpPr");
             let mut s2 = s.clone();
             if matches!(s2.fill, Some(Fill::Background)) {
@@ -432,7 +435,7 @@ fn sp(w: &mut W, x: &mut Exp, o: &mut Out, id: u32, s: &Shape, math: bool) {
     } else {
         w.empty("p:cNvSpPr", cnv);
     }
-    nv_pr(w, s);
+    nv_pr(w, x, o, s);
     w.close("p:nvSpPr");
     let tmp;
     let sref = if matches!(s.fill, Some(Fill::Background)) {
@@ -460,7 +463,7 @@ fn frame_open(w: &mut W, x: &mut Exp, o: &mut Out, id: u32, s: &Shape) {
     w.open0("p:cNvGraphicFramePr");
     w.empty("a:graphicFrameLocks", A::new().a("noGrp", "1").t("noMove", s.locked).t("noResize", s.locked));
     w.close("p:cNvGraphicFramePr");
-    nv_pr(w, s);
+    nv_pr(w, x, o, s);
     w.close("p:nvGraphicFramePr");
     let xf = s.xfrm.unwrap_or_default();
     let mut xf0 = xf;

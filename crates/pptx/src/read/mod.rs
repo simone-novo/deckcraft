@@ -64,6 +64,22 @@ impl Imp<'_> {
     }
 }
 
+/// Tags behind a `p:custDataLst` (each `p:tags r:id` names a `ppt/tags/tagN.xml` part), in order.
+pub fn read_tags(imp: &Imp, part: &Part, cdl: Option<&El>) -> Vec<(String, String)> {
+    let mut out = vec![];
+    let Some(cdl) = cdl else { return out };
+    for t in cdl.children_named("tags").take(64) {
+        let Some(target) = t.attr("r:id").and_then(|id| part.rels.target(id)) else { continue };
+        let Some(doc) = imp.pkg.xml(target) else { continue };
+        for tag in doc.root.children_named("tag").take(1024) {
+            if let Some(name) = tag.attr("name") {
+                out.push((name.to_string(), tag.attr("val").unwrap_or("").to_string()));
+            }
+        }
+    }
+    out
+}
+
 /// One part being read: its name, relationships and root namespace declarations.
 pub struct Part {
     pub name: String,
@@ -295,6 +311,7 @@ pub fn import(bytes: &[u8]) -> Result<Presentation, PptxError> {
         let part = Part::new(&pkg, path, doc);
         let layout = part.rels.first_of("slideLayout").and_then(|r| layout_by_part.get(&opc::norm(&r.target)).copied()).unwrap_or(fallback_layout);
         let mut slide = read_slide(&mut imp, &part, doc, *id, layout);
+        slide.file_id = (*file_id >= 256).then_some(*file_id);
         // Notes.
         if let Some(n) = part.rels.first_of("notesSlide")
             && let Some(nd) = load(&pkg, &n.target)
@@ -542,6 +559,7 @@ fn read_slide(imp: &mut Imp, part: &Part, doc: &Doc, id: SlideId, layout: Layout
     if let Some(csld) = root.child("cSld") {
         s.name = csld.attr("name").unwrap_or("").to_string();
         s.background = background(imp, part, csld);
+        s.tags = read_tags(imp, part, csld.child("custDataLst"));
         if let Some(tree) = csld.child("spTree") {
             s.shapes = shapes::sp_tree(imp, part, &mut ctx, tree, 0);
         }
