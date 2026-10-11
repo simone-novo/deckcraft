@@ -362,8 +362,9 @@ fn plot_group(w: &mut W, c: &Chart, kind: ChartType, list: &[(usize, &Series)]) 
     w.close(tag);
 }
 
-/// The chart part XML.
-pub fn chart_xml(c: &Chart) -> Vec<u8> {
+/// The chart part XML, and whether it is the kept original (whose `r:id`s then refer to
+/// `c.kept_parts`, which the caller writes back with the same ids).
+pub fn chart_xml_kept(c: &Chart) -> (Vec<u8>, bool) {
     // Reuse the kept part when the chart is unchanged since it was read.
     if let Some(raw) = &c.raw
         && let Ok(doc) = crate::xml::parse(raw.as_bytes())
@@ -374,12 +375,17 @@ pub fn chart_xml(c: &Chart) -> Vec<u8> {
         if let Some(back) = crate::read::chart_from_el(&root) {
             let mut me = c.clone();
             me.raw = None;
+            me.kept_parts.clear();
             if back == me {
                 let mut keep = doc.root;
-                keep.remove_all(&["externalData", "userShapes"]);
+                // An external-data or user-shapes reference stays only when its target was kept.
+                let kept: Vec<&str> = c.kept_parts.iter().map(|k| k.id.as_str()).collect();
+                let dangling = |e: &crate::xml::El| e.attr("r:id").is_none_or(|id| !kept.contains(&id));
+                let drop: Vec<&str> = ["externalData", "userShapes"].into_iter().filter(|t| keep.child(t).is_some_and(dangling)).collect();
+                keep.remove_all(&drop);
                 let mut w = W::new();
                 w.raw(&keep.to_xml());
-                return w.finish();
+                return (w.finish(), true);
             }
         }
     }
@@ -477,5 +483,5 @@ pub fn chart_xml(c: &Chart) -> Vec<u8> {
         sp_pr(&mut w, Some(f), None);
     }
     w.close("c:chartSpace");
-    w.finish()
+    (w.finish(), false)
 }

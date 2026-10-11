@@ -331,8 +331,9 @@ fn frame(imp: &mut Imp, part: &Part, ctx: &mut IdCtx, e: &El, depth: usize) -> S
         if let Some(c) = gd.child("chart")
             && let Some(rel) = part.rels.get(c.attr("r:id").unwrap_or(""))
             && let Some(bytes) = imp.pkg.get(&rel.target)
-            && let Some(chart) = super::read_chart_xml(bytes)
+            && let Some(mut chart) = super::read_chart_xml(bytes)
         {
+            chart.kept_parts = super::chart::kept_parts(imp, &rel.target);
             s.kind = ShapeKind::Chart(Box::new(chart));
             return s;
         }

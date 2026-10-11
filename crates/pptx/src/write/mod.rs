@@ -183,7 +183,29 @@ impl Exp<'_> {
     pub fn chart_rel(&mut self, o: &mut Out, c: &deckcraft_model::Chart) -> String {
         self.n_chart += 1;
         let name = format!("ppt/charts/chart{}.xml", self.n_chart);
-        self.pkg.xml_part(&name, CT_CHART, chart::chart_xml(c));
+        let (xml, kept) = chart::chart_xml_kept(c);
+        self.pkg.xml_part(&name, CT_CHART, xml);
+        if kept && !c.kept_parts.is_empty() {
+            // The original's relationships, same ids, targets renamed after this chart.
+            let mut rels = RelsOut::default();
+            for k in &c.kept_parts {
+                let target = if k.external {
+                    k.target.clone()
+                } else {
+                    let (dir, file) = k.target.rsplit_once('/').unwrap_or(("ppt", k.target.as_str()));
+                    let (stem, ext) = file.rsplit_once('.').unwrap_or((file, "bin"));
+                    let part = format!("{dir}/{stem}_c{}.{ext}", self.n_chart);
+                    if ext.eq_ignore_ascii_case("xml") {
+                        self.pkg.xml_part(&part, &k.content_type, k.data.to_vec());
+                    } else {
+                        self.pkg.binary(&part, &k.content_type, k.data.to_vec());
+                    }
+                    opc::relative(&name, &part)
+                };
+                rels.items.push((k.id.clone(), k.rel_type.clone(), target, k.external));
+            }
+            self.pkg.rels(&name, &rels);
+        }
         o.rels.add_new("chart", &opc::relative(&o.name, &name), false)
     }
 }
@@ -682,11 +704,7 @@ fn section_slides(p: &Presentation) -> Vec<(String, Vec<usize>)> {
 fn slide_file_ids(p: &Presentation) -> Vec<u32> {
     let kept: Vec<u32> = p.slides.iter().filter_map(|s| s.file_id.filter(|id| (256..i32::MAX as u32).contains(id))).collect();
     let unique: std::collections::HashSet<u32> = kept.iter().copied().collect();
-    if kept.len() == p.slides.len() && unique.len() == kept.len() {
-        kept
-    } else {
-        (0..p.slides.len() as u32).map(|i| 256 + i).collect()
-    }
+    if kept.len() == p.slides.len() && unique.len() == kept.len() { kept } else { (0..p.slides.len() as u32).map(|i| 256 + i).collect() }
 }
 
 fn presentation_xml(x: &mut Exp, o: &mut Out, masters: &[(u64, String)], notes: Option<&str>, slides: &[String]) -> Vec<u8> {

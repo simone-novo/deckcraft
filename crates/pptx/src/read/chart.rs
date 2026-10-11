@@ -73,6 +73,33 @@ fn numbers(e: &El) -> Vec<Option<f64>> {
 }
 
 /// Parse a chart part. Returns `None` for something that isn't a chart we can read.
+/// The chart part's relationships with their targets, for writing back an unchanged chart. A target
+/// that has relationships of its own (pictures inside user shapes) is not kept.
+pub fn kept_parts(imp: &super::Imp, chart_part: &str) -> Vec<deckcraft_model::chart::KeptPart> {
+    let mut out = vec![];
+    let Some(doc) = imp.pkg.xml(&crate::opc::rels_path(chart_part)) else { return out };
+    let base = crate::opc::dir_of(chart_part);
+    for r in doc.root.children_named("Relationship").take(64) {
+        let (Some(id), Some(ty), Some(target)) = (r.attr("Id"), r.attr("Type"), r.attr("Target")) else { continue };
+        let external = r.attr("TargetMode").is_some_and(|m| m.eq_ignore_ascii_case("external"));
+        let mut k = deckcraft_model::chart::KeptPart { id: id.into(), rel_type: ty.into(), external, ..Default::default() };
+        if external {
+            k.target = target.into();
+        } else {
+            let part = crate::opc::resolve(&base, target);
+            if imp.pkg.get(&crate::opc::rels_path(&part)).is_some() {
+                continue;
+            }
+            let Some(bytes) = imp.pkg.get(&part) else { continue };
+            k.content_type = imp.pkg.content_type(&part).unwrap_or_default();
+            k.data = std::sync::Arc::new(bytes.to_vec());
+            k.target = part;
+        }
+        out.push(k);
+    }
+    out
+}
+
 pub fn read_chart_xml(bytes: &[u8]) -> Option<Chart> {
     let doc = crate::xml::parse(bytes).ok()?;
     let mut root = doc.root;

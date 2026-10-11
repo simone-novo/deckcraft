@@ -85,8 +85,11 @@ fn fetch_into(url: String, inbox: Inbox, ctx: egui::Context) {
     wasm_bindgen_futures::spawn_local(async move {
         let got: Result<Vec<u8>, String> = async {
             let window = web_sys::window().ok_or_else(|| "no window".to_string())?;
-            let resp: web_sys::Response =
-                wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(&url)).await.map_err(js_err)?.dyn_into().map_err(|_| "not a response".to_string())?;
+            let resp: web_sys::Response = wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(&url))
+                .await
+                .map_err(js_err)?
+                .dyn_into()
+                .map_err(|_| "not a response".to_string())?;
             if !resp.ok() {
                 return Err(format!("HTTP {}", resp.status()));
             }

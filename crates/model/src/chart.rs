@@ -162,6 +162,24 @@ pub struct Chart {
     /// Original chart XML part kept for round-trip of unmodelled options.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<String>,
+    /// What the chart part points to (embedded workbook, link to an external one, style, colours,
+    /// user shapes, theme override), kept verbatim with its relationship ids for a PPTX round trip
+    /// of an unchanged chart. Not written to `.deckcraft`.
+    #[serde(skip)]
+    pub kept_parts: Vec<KeptPart>,
+}
+
+/// One relationship of a chart part, and the bytes of its target when it is inside the package.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct KeptPart {
+    pub id: String,
+    /// Full relationship type URI.
+    pub rel_type: String,
+    /// Original part name, or the URL of an external target.
+    pub target: String,
+    pub external: bool,
+    pub content_type: String,
+    pub data: std::sync::Arc<Vec<u8>>,
 }
 
 impl Default for Chart {
@@ -187,6 +205,7 @@ impl Default for Chart {
             y_min: None,
             y_max: None,
             raw: None,
+            kept_parts: vec![],
         }
     }
 }
