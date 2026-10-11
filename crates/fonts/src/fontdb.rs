@@ -32,6 +32,9 @@ pub fn bundled() -> Vec<&'static [u8]> {
 pub fn substitutes(family: &str) -> &'static [&'static str] {
     match family.to_ascii_lowercase().as_str() {
         "calibri" | "calibri light" => &["Carlito", "Liberation Sans", "Arial", "Inter"],
+        // Radian decks: the template's theme fonts are Figtree and Roboto Serif, which the PC that
+        // presents them doesn't have, so PowerPoint shows Calibri; show what the IC sees.
+        "figtree" | "roboto serif" | "roboto serif 14pt" | "roboto serif 14pt light" => &["Calibri", "Carlito", "Liberation Sans", "Inter"],
         "cambria" | "cambria math" => &["Caladea", "Liberation Serif", "Times New Roman", "Merriweather"],
         "arial" | "helvetica" | "helvetica neue" | "arial nova" => &["Liberation Sans", "Arial", "Helvetica Neue", "Helvetica", "Inter"],
         "times new roman" | "times" => &["Liberation Serif", "Times New Roman", "Times", "Merriweather"],

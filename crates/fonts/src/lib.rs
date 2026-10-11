@@ -162,6 +162,12 @@ mod tests {
     }
 
     #[test]
+    fn house_fonts_fall_back_to_calibri() {
+        assert_eq!(substitutes("Figtree").first(), Some(&"Calibri"));
+        assert_eq!(substitutes("Roboto Serif 14pt Light").first(), Some(&"Calibri"));
+    }
+
+    #[test]
     fn shaping_produces_clusters_and_advances() {
         let face = any_face();
         let g = shape(&face, "Hello", &[], |c| c);
