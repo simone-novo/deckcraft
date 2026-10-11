@@ -730,3 +730,72 @@ fn date_fields_keep_their_type_and_saved_text() {
         assert_eq!(by_name(&q.slides[0], name).text, by_name(&p.slides[0], name).text, "{name}");
     }
 }
+
+#[test]
+fn tags_and_slide_ids_round_trip() {
+    let mut p = defaults::new_presentation(None);
+    p.slides.clear();
+    for (i, (key, file_id)) in [("summary", 516), ("trade", 265)].into_iter().enumerate() {
+        let mut s = new_slide(&mut p, &format!("Slide {i}"));
+        s.tags = vec![("BUILDKEY".into(), key.into())];
+        s.file_id = Some(file_id);
+        let mut box_ = shape(&mut p, "Card", 40.0, 120.0, 300.0, 80.0);
+        box_.tags = vec![("BUILDPART".into(), format!("{key}_card")), ("BUILDSTAMP".into(), "a1b2c3".into())];
+        s.shapes.push(box_);
+        p.slides.push(Arc::new(s));
+    }
+    let back = round(&p);
+    assert_eq!(back.slides.len(), 2);
+    for (a, b) in p.slides.iter().zip(&back.slides) {
+        assert_eq!(a.tags, b.tags);
+        assert_eq!(a.file_id, b.file_id);
+        assert_eq!(by_name(a, "Card").tags, by_name(b, "Card").tags);
+    }
+}
+
+#[test]
+fn duplicate_slide_ids_fall_back_to_fresh_ones() {
+    let mut p = defaults::new_presentation(None);
+    p.slides.clear();
+    for _ in 0..2 {
+        let mut s = new_slide(&mut p, "Copy");
+        s.file_id = Some(300);
+        p.slides.push(Arc::new(s));
+    }
+    let back = round(&p);
+    let ids: Vec<Option<u32>> = back.slides.iter().map(|s| s.file_id).collect();
+    assert_eq!(ids, vec![Some(256), Some(257)]);
+}
+
+#[test]
+fn unchanged_chart_keeps_its_workbook() {
+    let mut p = defaults::new_presentation(None);
+    p.slides.clear();
+    let mut s = new_slide(&mut p, "Chart");
+    let mut ch = shape(&mut p, "Chart 1", 40.0, 120.0, 400.0, 300.0);
+    ch.kind = ShapeKind::Chart(Box::new(Chart::sample(ChartType::Column)));
+    s.shapes.push(ch);
+    p.slides.push(Arc::new(s));
+    // Read back once so the chart carries its original XML, then give it a workbook as PowerPoint does.
+    let mut once = round(&p);
+    let ShapeKind::Chart(c) = &mut Arc::make_mut(&mut once.slides[0]).shapes.iter_mut().find(|x| x.name == "Chart 1").expect("chart").kind else {
+        panic!("not a chart")
+    };
+    let raw = c.raw.take().expect("raw chart xml");
+    c.raw = Some(raw.replacen("</c:chartSpace>", r#"<c:externalData r:id="rId9"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>"#, 1));
+    let book = vec![0x50, 0x4b, 0x03, 0x04, 1, 2, 3];
+    c.kept_parts = vec![deckcraft_model::chart::KeptPart {
+        id: "rId9".into(),
+        rel_type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/package".into(),
+        target: "ppt/embeddings/Microsoft_Excel_Worksheet.xlsx".into(),
+        external: false,
+        content_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".into(),
+        data: Arc::new(book.clone()),
+    }];
+    let twice = round(&once);
+    let ShapeKind::Chart(c2) = &by_name(&twice.slides[0], "Chart 1").kind else { panic!("not a chart") };
+    assert_eq!(c2.kept_parts.len(), 1);
+    assert_eq!(c2.kept_parts[0].id, "rId9");
+    assert_eq!(*c2.kept_parts[0].data, book);
+    assert!(c2.raw.as_deref().is_some_and(|r| r.contains(r#"<c:externalData r:id="rId9""#)));
+}

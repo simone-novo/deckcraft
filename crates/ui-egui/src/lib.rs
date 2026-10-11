@@ -58,6 +58,9 @@ pub struct Services {
     pub clipboard_image: Option<Box<dyn FnMut() -> Option<Vec<u8>>>>,
     /// Audio output for media playback (cpal on desktop); without one media plays silently.
     pub audio_out: Option<Box<dyn deckcraft_media::AudioOut>>,
+    /// Save a presentation without a path as PowerPoint rather than `.deckcraft` (a host that
+    /// stores `.pptx`, such as a web page with a save endpoint).
+    pub save_pptx: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -456,7 +459,7 @@ impl SlideApp {
                 Err(e) => self.set_status(e.to_string()),
             }
         } else {
-            self.save_as_dialog("deckcraft");
+            self.save_as_dialog(if self.services.save_pptx { "pptx" } else { "deckcraft" });
         }
     }
 
